@@ -1,4 +1,4 @@
-module github.com/hdr-is/terraform-provider-vers
+module github.com/hdresearch/vers-tf
 
 go 1.24.2
 

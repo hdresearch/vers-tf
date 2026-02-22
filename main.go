@@ -5,7 +5,7 @@ import (
 	"log"
 
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
-	"github.com/hdr-is/terraform-provider-vers/internal/provider"
+	"github.com/hdresearch/vers-tf/internal/provider"
 )
 
 var version = "dev"

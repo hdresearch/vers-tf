@@ -8,7 +8,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
-	"github.com/hdr-is/terraform-provider-vers/internal/client"
+	"github.com/hdresearch/vers-tf/internal/client"
 )
 
 var _ datasource.DataSource = &VMsDataSource{}

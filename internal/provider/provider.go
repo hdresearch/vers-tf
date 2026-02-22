@@ -11,9 +11,9 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
-	"github.com/hdr-is/terraform-provider-vers/internal/client"
-	"github.com/hdr-is/terraform-provider-vers/internal/datasources"
-	"github.com/hdr-is/terraform-provider-vers/internal/resources"
+	"github.com/hdresearch/vers-tf/internal/client"
+	"github.com/hdresearch/vers-tf/internal/datasources"
+	"github.com/hdresearch/vers-tf/internal/resources"
 )
 
 var _ provider.Provider = &VersProvider{}
