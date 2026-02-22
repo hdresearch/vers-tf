@@ -2,6 +2,7 @@ package resources
 
 import (
 	"context"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -102,6 +103,12 @@ func (r *VMCommitResource) Create(ctx context.Context, req resource.CreateReques
 		"vm_id": vmID, "keep_paused": keepPaused,
 	})
 
+	// Flush filesystem caches before snapshotting. The Vers commit API pauses
+	// the VM and captures its memory + disk state. If the kernel still has
+	// dirty pages in its buffer cache, they may appear as zero-filled regions
+	// in the committed image — corrupting files written by prior provisioning.
+	r.syncBeforeCommit(ctx, vmID)
+
 	result, err := r.client.CommitVM(vmID, keepPaused)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to commit VM", err.Error())
@@ -141,6 +148,9 @@ func (r *VMCommitResource) Update(ctx context.Context, req resource.UpdateReques
 		"vm_id": vmID,
 	})
 
+	// Flush filesystem caches before re-commit (same as Create — see comment there).
+	r.syncBeforeCommit(ctx, vmID)
+
 	result, err := r.client.CommitVM(vmID, keepPaused)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to re-commit VM", err.Error())
@@ -157,4 +167,41 @@ func (r *VMCommitResource) Delete(ctx context.Context, req resource.DeleteReques
 	// Commits cannot be deleted via the API currently.
 	// We just remove from state. The commit remains in Vers.
 	tflog.Debug(ctx, "Removing commit from Terraform state (commits are retained in Vers)")
+}
+
+// syncBeforeCommit SSHes into the VM and runs 'sync' to flush all dirty
+// pages to disk. This prevents a class of corruption where the Vers commit
+// API snapshots the VM while the kernel still has unflushed buffer cache
+// entries — which manifest as zero-filled file regions in the committed image.
+//
+// This is best-effort with a warning (not a hard error) because some VMs
+// may not be SSH-reachable at commit time (e.g. the VM was paused externally).
+// In practice, every Terraform workflow that does provision → commit will
+// have the VM running and SSH-reachable.
+func (r *VMCommitResource) syncBeforeCommit(ctx context.Context, vmID string) {
+	sshKey, err := r.client.GetSSHKey(vmID)
+	if err != nil {
+		tflog.Warn(ctx, "Could not get SSH key for pre-commit sync (skipping)", map[string]interface{}{
+			"vm_id": vmID, "error": err.Error(),
+		})
+		return
+	}
+
+	ssh, err := client.NewSSHClient(vmID, sshKey.SSHPrivateKey)
+	if err != nil {
+		tflog.Warn(ctx, "Could not create SSH client for pre-commit sync (skipping)", map[string]interface{}{
+			"vm_id": vmID, "error": err.Error(),
+		})
+		return
+	}
+	defer ssh.Cleanup()
+
+	tflog.Debug(ctx, "Running 'sync' on VM before commit to flush dirty pages", map[string]interface{}{"vm_id": vmID})
+	if _, err := ssh.ExecWithTimeout("sync", 2*time.Minute); err != nil {
+		tflog.Warn(ctx, "Pre-commit sync failed (VM may not be SSH-reachable)", map[string]interface{}{
+			"vm_id": vmID, "error": err.Error(),
+		})
+		return
+	}
+	tflog.Debug(ctx, "Pre-commit sync complete", map[string]interface{}{"vm_id": vmID})
 }

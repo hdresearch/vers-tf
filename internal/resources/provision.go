@@ -221,6 +221,16 @@ func (r *ProvisionResource) Create(ctx context.Context, req resource.CreateReque
 		}
 	}
 
+	// Flush all dirty pages to disk. Without this, a subsequent vers_vm_commit
+	// can snapshot the VM before the kernel has written back file data, leading
+	// to zero-filled (corrupt) files in the committed image.
+	tflog.Debug(ctx, "Syncing filesystem to flush dirty pages before potential commit")
+	if _, err := ssh.ExecWithTimeout("sync", 2*time.Minute); err != nil {
+		resp.Diagnostics.AddError("Failed to sync filesystem after provisioning",
+			fmt.Sprintf("The 'sync' command failed: %s. A subsequent commit may produce a corrupt image.", err.Error()))
+		return
+	}
+
 	// Generate a stable ID from the provisioning inputs
 	plan.ID = types.StringValue(r.computeID(ctx, plan))
 
@@ -325,6 +335,14 @@ func (r *ProvisionResource) Update(ctx context.Context, req resource.UpdateReque
 				return
 			}
 		}
+	}
+
+	// Flush all dirty pages to disk (same as Create — see comment there).
+	tflog.Debug(ctx, "Syncing filesystem to flush dirty pages before potential commit")
+	if _, err := ssh.ExecWithTimeout("sync", 2*time.Minute); err != nil {
+		resp.Diagnostics.AddError("Failed to sync filesystem after re-provisioning",
+			fmt.Sprintf("The 'sync' command failed: %s. A subsequent commit may produce a corrupt image.", err.Error()))
+		return
 	}
 
 	plan.ID = types.StringValue(r.computeID(ctx, plan))
